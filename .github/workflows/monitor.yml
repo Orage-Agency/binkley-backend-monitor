@@ -1,0 +1,37 @@
+name: binkley-backend-monitor
+# External uptime monitor for the OKC Onsite Detailing (Olivia) backend.
+# Runs on GitHub's servers (off George's PC) so it can detect when the PC/tunnel is down.
+# Pings the n8n health endpoint every 5 min; on failure, texts the on-call number via Twilio.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Health check (3 tries)
+        id: chk
+        run: |
+          code=000
+          ok=0
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 "${{ secrets.HEALTH_URL }}" || echo 000)
+            if [ "$code" = "200" ]; then ok=1; break; fi
+            sleep 10
+          done
+          echo "ok=$ok"   >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "Health check result: ok=$ok last_code=$code"
+
+      - name: Alert on-call if down
+        if: steps.chk.outputs.ok != '1'
+        run: |
+          curl -s -X POST "https://api.twilio.com/2010-04-01/Accounts/${{ secrets.TWILIO_ACCOUNT_SID }}/Messages.json" \
+            --data-urlencode "MessagingServiceSid=${{ secrets.TWILIO_MGS }}" \
+            --data-urlencode "To=${{ secrets.ALERT_TO }}" \
+            --data-urlencode "Body=DOWN: OKC Onsite Detailing backend (n8n) is not responding (HTTP ${{ steps.chk.outputs.code }}). Olivia cannot take bookings. Turn the PC / Cloudflare tunnel back on." \
+            -u "${{ secrets.TWILIO_ACCOUNT_SID }}:${{ secrets.TWILIO_AUTH_TOKEN }}" \
+            -o /dev/null -w "Twilio alert sent: HTTP %{http_code}\n"
