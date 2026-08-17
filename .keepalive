@@ -1,0 +1,3 @@
+last keepalive: 2026-08-17T21:05:35Z
+Purpose: GitHub disables scheduled workflows after 60 days of repo inactivity.
+This file is touched periodically so binkley-backend-monitor never goes silent again.
